@@ -1,103 +1,100 @@
-const fs = require("fs");
+// server.js
+
 const express = require("express");
 const http = require("http");
+const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
 
-const io = require("socket.io")(server, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET","POST"]
+  }
 });
 
-// Basic route (IMPORTANT for Hostinger)
-app.get("/", (req, res) => {
-    res.send("VibeSynk Chat Server Running ✅");
-});
+let waiting = [];
 
-// Users
-let users = [];
-let waitingUser = null;
+/* JOIN QUEUE */
+function joinQueue(socket){
 
-// Update JSON
-function updateOnlineFile() {
-    try {
-        fs.writeFileSync("users.json", JSON.stringify({
-            online: users.length
-        }));
-    } catch (e) {
-        console.log("JSON error:", e);
-    }
+  // remove duplicates
+  waiting = waiting.filter(s => s.id !== socket.id);
+
+  if(waiting.length > 0){
+
+    let partner = waiting.shift();
+
+    let room = socket.id + "#" + partner.id;
+
+    socket.join(room);
+    partner.join(room);
+
+    socket.room = room;
+    partner.room = room;
+
+    socket.emit("connected");
+    partner.emit("connected");
+
+  } else {
+    waiting.push(socket);
+    socket.emit("waiting");
+  }
 }
 
+/* CONNECTION */
 io.on("connection", (socket) => {
 
-    users.push(socket);
-    updateOnlineFile();
+  console.log("User:", socket.id);
 
-    io.emit("onlineCount", users.length);
+  socket.on("join", () => {
+    joinQueue(socket);
+  });
 
-    socket.on("join", () => {
+  socket.on("message", (msg) => {
+    if(socket.room){
+      socket.to(socket.room).emit("message", msg);
+    }
+  });
 
-        if (waitingUser && waitingUser !== socket) {
+  socket.on("typing", () => {
+    if(socket.room){
+      socket.to(socket.room).emit("typing");
+    }
+  });
 
-            socket.partner = waitingUser;
-            waitingUser.partner = socket;
+  socket.on("next", () => {
 
-            socket.emit("connected");
-            waitingUser.emit("connected");
+    if(socket.room){
+      socket.to(socket.room).emit("strangerLeft");
+      socket.leave(socket.room);
+    }
 
-            waitingUser = null;
+    socket.room = null;
 
-        } else {
-            waitingUser = socket;
-            socket.emit("waiting");
-        }
+    // 🔥 instant requeue
+    joinQueue(socket);
+  });
 
-    });
+  socket.on("disconnect", () => {
 
-    socket.on("message", (msg) => {
-        if (socket.partner) {
-            socket.partner.emit("message", msg);
-        }
-    });
+    waiting = waiting.filter(s => s.id !== socket.id);
 
-    socket.on("next", () => {
+    if(socket.room){
+      socket.to(socket.room).emit("strangerLeft");
+    }
 
-        if (socket.partner) {
-            socket.partner.emit("strangerLeft");
-            socket.partner.partner = null;
-        }
-
-        socket.partner = null;
-        waitingUser = socket;
-        socket.emit("waiting");
-    });
-
-    socket.on("disconnect", () => {
-
-        users = users.filter(u => u !== socket);
-        updateOnlineFile();
-
-        io.emit("onlineCount", users.length);
-
-        if (socket.partner) {
-            socket.partner.emit("strangerLeft");
-            socket.partner.partner = null;
-        }
-
-        if (waitingUser === socket) {
-            waitingUser = null;
-        }
-    });
+    console.log("Disconnected:", socket.id);
+  });
 
 });
 
-// IMPORTANT
-const PORT = process.env.PORT || 3000;
+/* ONLINE COUNT */
+setInterval(()=>{
+  io.emit("onlineCount", io.engine.clientsCount);
+},2000);
 
-server.listen(PORT, () => {
-    console.log("Server running on port " + PORT);
+server.listen(3000, ()=>{
+  console.log("Server running 🚀");
 });
