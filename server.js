@@ -1,96 +1,101 @@
+const fs = require("fs");
 const express = require("express");
 const http = require("http");
-const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
 
-const io = new Server(server, {
-    cors: { origin: "*" }
+const io = require("socket.io")(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
 });
 
+// Basic route (IMPORTANT for Hostinger)
 app.get("/", (req, res) => {
-    res.send("VibeSynk Server Running 🚀");
+    res.send("VibeSynk Chat Server Running ✅");
 });
 
-let users = {};
-let waitingQueue = [];
+// Users
+let users = [];
+let waitingUser = null;
 
-function generateUserId() {
-    return "VS" + Math.floor(10000 + Math.random() * 90000);
-}
-
-function matchUsers() {
-    while (waitingQueue.length >= 2) {
-        const u1 = waitingQueue.shift();
-        const u2 = waitingQueue.shift();
-
-        if (!users[u1] || !users[u2]) continue;
-
-        users[u1].partner = u2;
-        users[u2].partner = u1;
-
-        io.to(u1).emit("matched", users[u2].id);
-        io.to(u2).emit("matched", users[u1].id);
+// Update JSON
+function updateOnlineFile() {
+    try {
+        fs.writeFileSync("users.json", JSON.stringify({
+            online: users.length
+        }));
+    } catch (e) {
+        console.log("JSON error:", e);
     }
 }
 
 io.on("connection", (socket) => {
 
-    const userId = generateUserId();
+    users.push(socket);
+    updateOnlineFile();
 
-    users[socket.id] = {
-        id: userId,
-        partner: null
-    };
+    io.emit("onlineCount", users.length);
 
-    socket.emit("yourId", userId);
+    socket.on("join", () => {
 
-    socket.on("start-text", () => {
-        if (!waitingQueue.includes(socket.id)) {
-            waitingQueue.push(socket.id);
-            matchUsers();
+        if (waitingUser && waitingUser !== socket) {
+
+            socket.partner = waitingUser;
+            waitingUser.partner = socket;
+
+            socket.emit("connected");
+            waitingUser.emit("connected");
+
+            waitingUser = null;
+
+        } else {
+            waitingUser = socket;
+            socket.emit("waiting");
+        }
+
+    });
+
+    socket.on("message", (msg) => {
+        if (socket.partner) {
+            socket.partner.emit("message", msg);
         }
     });
 
     socket.on("next", () => {
-        const partner = users[socket.id]?.partner;
 
-        if (partner && users[partner]) {
-            io.to(partner).emit("partner-left");
-            users[partner].partner = null;
+        if (socket.partner) {
+            socket.partner.emit("strangerLeft");
+            socket.partner.partner = null;
         }
 
-        users[socket.id].partner = null;
-
-        if (!waitingQueue.includes(socket.id)) {
-            waitingQueue.push(socket.id);
-        }
-
-        matchUsers();
-    });
-
-    socket.on("message", (msg) => {
-        const partner = users[socket.id]?.partner;
-
-        if (partner && users[partner]) {
-            io.to(partner).emit("message", msg);
-        }
+        socket.partner = null;
+        waitingUser = socket;
+        socket.emit("waiting");
     });
 
     socket.on("disconnect", () => {
-        const partner = users[socket.id]?.partner;
 
-        if (partner && users[partner]) {
-            io.to(partner).emit("partner-left");
-            users[partner].partner = null;
+        users = users.filter(u => u !== socket);
+        updateOnlineFile();
+
+        io.emit("onlineCount", users.length);
+
+        if (socket.partner) {
+            socket.partner.emit("strangerLeft");
+            socket.partner.partner = null;
         }
 
-        waitingQueue = waitingQueue.filter(id => id !== socket.id);
-        delete users[socket.id];
+        if (waitingUser === socket) {
+            waitingUser = null;
+        }
     });
+
 });
 
+// IMPORTANT
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
