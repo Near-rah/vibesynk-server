@@ -1,6 +1,6 @@
 // server.js
-// VibeSynk Hybrid Human + Hidden Bot Backend
-// Works with your current frontend unchanged
+// VibeSynk FINAL Smart Human + Hidden Bot v2
+// Realistic Telugu / Hindi / English Stranger Chat Style
 
 const express = require("express");
 const http = require("http");
@@ -16,134 +16,74 @@ const io = new Server(server, {
   }
 });
 
-/* =====================================================
-   CONFIG
-===================================================== */
-
 const PORT = process.env.PORT || 3000;
-const BOT_WAIT_TIME = 4000; // wait before bot joins if no human found
+const BOT_WAIT = 3500;
 
 /* =====================================================
    STORAGE
 ===================================================== */
 
-let waiting = []; // real users waiting only
-
-/* =====================================================
-   BOT DATA
-===================================================== */
-
-const bots = [
-  { name: "casual" },
-  { name: "funny" },
-  { name: "friendly" },
-  { name: "genz" },
-  { name: "flirty" },
-  { name: "deep" }
-];
-
-const teluguReplies = [
-  "haa bro 😄",
-  "nuvvu ekkadi?",
-  "em chestunnav ippudu",
-  "nice ra",
-  "bagundi 😄",
-  "hyd vachava eppudaina?",
-  "haha nijama 😂",
-  "inka cheppu"
-];
-
-const hindiReplies = [
-  "haan yaar 😄",
-  "kahan se ho?",
-  "kya kar rahe ho",
-  "sahi hai 😄",
-  "mast 😂",
-  "aur batao",
-  "same yaar",
-  "acha nice"
-];
-
-const englishReplies = [
-  "haha nice 😄",
-  "where you from?",
-  "what's up",
-  "same here lol",
-  "tell me more",
-  "fr? 😂",
-  "nice vibe",
-  "you seem cool"
-];
-
-const deepReplies = [
-  "life lately ela undi?",
-  "sab thik chal raha?",
-  "you happy these days?",
-  "sometimes random talks help 😄",
-  "what's on your mind?"
-];
+let waiting = [];
 
 /* =====================================================
    HELPERS
 ===================================================== */
 
-function random(arr) {
+function rand(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function removeFromQueue(socket) {
+function removeQueue(socket) {
   waiting = waiting.filter(s => s.id !== socket.id);
 }
 
-function getHumanWaitingCount() {
-  return waiting.length;
-}
-
-function cleanSocket(socket) {
-  socket.room = null;
-  socket.partnerId = null;
-  socket.isBotChat = false;
-  socket.botTimer = null;
-}
-
-function pairHumans(a, b) {
-  const room = a.id + "#" + b.id;
-
-  a.join(room);
-  b.join(room);
-
-  a.room = room;
-  b.room = room;
-
-  a.partnerId = b.id;
-  b.partnerId = a.id;
-
-  a.isBotChat = false;
-  b.isBotChat = false;
-
-  a.emit("connected");
-  b.emit("connected");
-}
-
-function findPartnerById(id) {
+function partnerById(id) {
   return io.sockets.sockets.get(id);
 }
 
+function resetSocket(socket) {
+  socket.room = null;
+  socket.partnerId = null;
+  socket.isBot = false;
+  socket.botLang = "english";
+  socket.botMemory = {};
+  socket.lastBotReply = "";
+  clearTimeout(socket.botTimer);
+}
+
+function sendTyping(socket, cb) {
+  socket.emit("typing");
+
+  const delay = 900 + Math.floor(Math.random() * 1800);
+
+  setTimeout(() => {
+    if (!socket.connected || !socket.isBot) return;
+    cb();
+  }, delay);
+}
+
+function sendBot(socket, msg) {
+  socket.lastBotReply = msg;
+  socket.emit("message", msg);
+}
+
 /* =====================================================
-   LANGUAGE DETECTION
+   LANGUAGE DETECT
 ===================================================== */
 
 function detectLang(text = "") {
   const t = text.toLowerCase();
 
   const teluguWords = [
-    "nenu","nuvvu","ekkadi","em","enti","ledu",
-    "unna","hyd","ra","bro","bagunnava","cheppu"
+    "nenu","nuvvu","ekkada","ekkadi","nundi","enti",
+    "em","ha","haa","ledu","unna","bro","ra",
+    "cheppu","bagunnava","vostu","tagultaru",
+    "guntur","vizag","hyd","vijayawada"
   ];
 
   const hindiWords = [
-    "mai","main","kya","kaise","haan","acha",
-    "kahan","tum","mera","bhai","yaar"
+    "mai","main","haan","kya","acha","kaise",
+    "kahan","tum","yaar","bhai","delhi"
   ];
 
   for (let w of teluguWords) {
@@ -157,69 +97,303 @@ function detectLang(text = "") {
   return "english";
 }
 
-function getBotReply(socket, userMsg) {
-  const lang = socket.botLang || detectLang(userMsg);
-  socket.botLang = lang;
-
-  const low = userMsg.toLowerCase();
-
-  if (
-    low.includes("sad") ||
-    low.includes("lonely") ||
-    low.includes("bored") ||
-    low.includes("life") ||
-    low.includes("depressed")
-  ) {
-    return random(deepReplies);
-  }
-
-  if (lang === "telugu") return random(teluguReplies);
-  if (lang === "hindi") return random(hindiReplies);
-
-  return random(englishReplies);
-}
-
 /* =====================================================
-   BOT CONNECT
+   HUMAN MATCH
 ===================================================== */
 
-function connectBot(socket) {
-  if (!socket.connected) return;
-  if (socket.room) return;
-  if (socket.isBotChat) return;
+function pairHumans(a, b) {
+  const room = a.id + "#" + b.id;
 
-  socket.isBotChat = true;
-  socket.botLang = "english";
-  socket.emit("connected");
+  a.join(room);
+  b.join(room);
 
-  setTimeout(() => {
-    if (socket.connected && socket.isBotChat) {
-      socket.emit("typing");
-    }
-  }, 800);
+  a.room = room;
+  b.room = room;
 
-  setTimeout(() => {
-    if (socket.connected && socket.isBotChat) {
-      socket.emit("message", random([
-        "hey 👋",
-        "hi 😄",
-        "hello",
-        "yo what's up",
-        "hey where you from?"
-      ]));
-    }
-  }, 1800);
+  a.partnerId = b.id;
+  b.partnerId = a.id;
+
+  a.emit("connected");
+  b.emit("connected");
 }
 
 /* =====================================================
-   QUEUE LOGIC
+   BOT START
+===================================================== */
+
+function startBot(socket) {
+  if (!socket.connected || socket.room) return;
+
+  socket.isBot = true;
+  socket.emit("connected");
+
+  sendTyping(socket, () => {
+    sendBot(socket, rand([
+      "hey 👋",
+      "hi bro 😄",
+      "hello",
+      "yo 😄",
+      "hey"
+    ]));
+  });
+}
+
+/* =====================================================
+   BOT REPLY ENGINE
+===================================================== */
+
+function noRepeat(socket, list) {
+  let arr = list.filter(x => x !== socket.lastBotReply);
+  if (arr.length === 0) arr = list;
+  return rand(arr);
+}
+
+function botReply(socket, message) {
+
+  const text = message.toLowerCase().trim();
+
+  socket.botLang = detectLang(text);
+
+  /* save city */
+  const cities = [
+    "guntur","vizag","hyderabad","hyd",
+    "vijayawada","warangal","delhi",
+    "mumbai","chennai"
+  ];
+
+  for (let c of cities) {
+    if (text.includes(c)) socket.botMemory.city = c;
+  }
+
+  /* =================================================
+     TELUGU MODE
+  ================================================= */
+
+  if (socket.botLang === "telugu") {
+
+    /* greetings */
+    if (
+      text === "hi" || text === "hey" ||
+      text === "hello" || text === "yo"
+    ) {
+      return noRepeat(socket, [
+        "hey bro 😄",
+        "haa hi",
+        "hello bro",
+        "hi 😄"
+      ]);
+    }
+
+    /* no girls complaint */
+    if (
+      text.includes("ammayi") ||
+      text.includes("girls") ||
+      text.includes("girl")
+    ) {
+      return noRepeat(socket, [
+        "haa bro 😂 andaru adhe antaru",
+        "ammayilu dorakadam kastam bro 😄",
+        "skip chesi vellipotharu emo 😂",
+        "same complaint andharidi bro"
+      ]);
+    }
+
+    /* skipped complaint */
+    if (
+      text.includes("skip") ||
+      text.includes("left") ||
+      text.includes("vellipoy")
+    ) {
+      return noRepeat(socket, [
+        "nijam bro 😄 fast ga skip chestharu",
+        "2 sec lo vellipotharu 😂",
+        "patience undadu bro ikkada",
+        "haa adhe scene"
+      ]);
+    }
+
+    /* boredom */
+    if (
+      text.includes("time pass") ||
+      text.includes("bored")
+    ) {
+      return noRepeat(socket, [
+        "same bro timepass ke vachava 😄",
+        "haa bore kodtundi kada",
+        "andukey random chats 😂",
+        "nice bro chill"
+      ]);
+    }
+
+    /* city */
+    if (socket.botMemory.city) {
+      const c = socket.botMemory.city;
+      delete socket.botMemory.city;
+
+      return noRepeat(socket, [
+        `${c} aa nice bro 😄`,
+        `ohh ${c} nundi aa`,
+        `${c} ante baguntadi bro`,
+        `${c} aa.. inkenti em chestunnav`
+      ]);
+    }
+
+    /* state */
+    if (
+      text.includes("andhra") ||
+      text.includes("telangana")
+    ) {
+      return noRepeat(socket, [
+        "nice bro 😄 ekkada nundi exactly?",
+        "which city bro?",
+        "haa nice.. district enti"
+      ]);
+    }
+
+    /* job / study */
+    if (
+      text.includes("job") ||
+      text.includes("work")
+    ) {
+      return noRepeat(socket, [
+        "super bro 😄 stress ekkuva aa",
+        "nice bro ekkada work",
+        "work life ante kastame bro 😂"
+      ]);
+    }
+
+    if (
+      text.includes("study") ||
+      text.includes("college") ||
+      text.includes("btech")
+    ) {
+      return noRepeat(socket, [
+        "nice bro 😄 which course",
+        "college life enjoy chey bro 😂",
+        "super bro hostel aa day scholar aa"
+      ]);
+    }
+
+    /* name */
+    if (
+      text.includes("name") ||
+      text.includes("na peru")
+    ) {
+      return noRepeat(socket, [
+        "haha name enduku bro 😄",
+        "cheptha later 😂",
+        "mundu nuvvu cheppu bro"
+      ]);
+    }
+
+    /* lonely/sad */
+    if (
+      text.includes("sad") ||
+      text.includes("alone") ||
+      text.includes("lonely")
+    ) {
+      return noRepeat(socket, [
+        "em ayyindi bro",
+        "cheppu vintha 😄",
+        "sometimes ila matladithe better untadi",
+        "haa life lo untadi bro"
+      ]);
+    }
+
+    /* default real style */
+    return noRepeat(socket, [
+      "haa bro 😄",
+      "inkenti cheppu",
+      "mari nuvvu?",
+      "avuna nice",
+      "em chestunnav ippudu",
+      "silent ga unnav 😂",
+      "inka cheppu bro",
+      "nice bro"
+    ]);
+  }
+
+  /* =================================================
+     HINDI MODE
+  ================================================= */
+
+  if (socket.botLang === "hindi") {
+
+    if (
+      text.includes("girl") ||
+      text.includes("ladki")
+    ) {
+      return noRepeat(socket, [
+        "haan yaar sab ladki hi dhoondte 😄",
+        "same scene bro 😂",
+        "milna mushkil hai yaar"
+      ]);
+    }
+
+    if (
+      text.includes("skip")
+    ) {
+      return noRepeat(socket, [
+        "2 sec me skip kar dete 😂",
+        "haan yaar patience nahi hai",
+        "same problem bro"
+      ]);
+    }
+
+    return noRepeat(socket, [
+      "haan yaar 😄",
+      "aur batao",
+      "kahan se ho exactly?",
+      "kya karte ho",
+      "mast bro",
+      "same 😂"
+    ]);
+  }
+
+  /* =================================================
+     ENGLISH MODE
+  ================================================= */
+
+  if (
+    text.includes("girl")
+  ) {
+    return noRepeat(socket, [
+      "everyone searching girls here 😂",
+      "same old story bro 😄",
+      "hard to find lol"
+    ]);
+  }
+
+  if (
+    text.includes("skip")
+  ) {
+    return noRepeat(socket, [
+      "people skip too fast 😂",
+      "2 seconds and gone lol",
+      "same issue here 😄"
+    ]);
+  }
+
+  return noRepeat(socket, [
+    "nice bro 😄",
+    "where you from exactly?",
+    "what you doing now",
+    "haha same",
+    "tell bro 😄",
+    "you seem chill"
+  ]);
+}
+
+/* =====================================================
+   JOIN QUEUE
 ===================================================== */
 
 function joinQueue(socket) {
-  removeFromQueue(socket);
 
-  // human available?
+  removeQueue(socket);
+
   if (waiting.length > 0) {
+
     const partner = waiting.shift();
 
     if (!partner || !partner.connected) {
@@ -234,137 +408,110 @@ function joinQueue(socket) {
     return;
   }
 
-  // no human found
   waiting.push(socket);
   socket.emit("waiting");
 
   socket.botTimer = setTimeout(() => {
-    removeFromQueue(socket);
 
-    // if another human arrived meanwhile, don't bot connect
-    if (getHumanWaitingCount() > 0) {
+    removeQueue(socket);
+
+    if (!socket.connected) return;
+
+    if (waiting.length > 0) {
       joinQueue(socket);
       return;
     }
 
-    connectBot(socket);
+    startBot(socket);
 
-  }, BOT_WAIT_TIME);
+  }, BOT_WAIT);
 }
 
 /* =====================================================
-   SOCKET EVENTS
+   SOCKET
 ===================================================== */
 
 io.on("connection", (socket) => {
 
-  console.log("User connected:", socket.id);
+  resetSocket(socket);
 
-  cleanSocket(socket);
-
-  /* JOIN */
   socket.on("join", () => {
     joinQueue(socket);
   });
 
-  /* MESSAGE */
   socket.on("message", (msg) => {
 
-    // BOT CHAT
-    if (socket.isBotChat) {
+    if (socket.isBot) {
 
-      const reply = getBotReply(socket, msg);
+      const reply = botReply(socket, msg);
 
-      setTimeout(() => {
-        if (socket.connected && socket.isBotChat) {
-          socket.emit("typing");
-        }
-      }, 700);
-
-      setTimeout(() => {
-        if (socket.connected && socket.isBotChat) {
-          socket.emit("message", reply);
-        }
-      }, 1800);
+      sendTyping(socket, () => {
+        sendBot(socket, reply);
+      });
 
       return;
     }
 
-    // HUMAN CHAT
     if (socket.room) {
       socket.to(socket.room).emit("message", msg);
     }
   });
 
-  /* TYPING */
   socket.on("typing", () => {
 
-    if (socket.isBotChat) return;
+    if (socket.isBot) return;
 
     if (socket.room) {
       socket.to(socket.room).emit("typing");
     }
   });
 
-  /* NEXT / SKIP */
   socket.on("next", () => {
 
     clearTimeout(socket.botTimer);
 
-    // if bot chat
-    if (socket.isBotChat) {
-      socket.isBotChat = false;
-      socket.room = null;
-      socket.partnerId = null;
+    /* bot chat */
+    if (socket.isBot) {
+      resetSocket(socket);
       joinQueue(socket);
       return;
     }
 
-    // human chat
+    /* human chat */
     if (socket.room && socket.partnerId) {
 
-      const partner = findPartnerById(socket.partnerId);
+      const p = partnerById(socket.partnerId);
 
-      if (partner && partner.connected) {
-        partner.leave(partner.room);
-        partner.room = null;
-        partner.partnerId = null;
-        partner.emit("strangerLeft");
-
-        joinQueue(partner);
+      if (p && p.connected) {
+        p.leave(p.room);
+        p.emit("strangerLeft");
+        resetSocket(p);
+        joinQueue(p);
       }
 
       socket.leave(socket.room);
     }
 
-    socket.room = null;
-    socket.partnerId = null;
-
+    resetSocket(socket);
     joinQueue(socket);
   });
 
-  /* DISCONNECT */
   socket.on("disconnect", () => {
 
     clearTimeout(socket.botTimer);
-
-    removeFromQueue(socket);
+    removeQueue(socket);
 
     if (socket.room && socket.partnerId) {
 
-      const partner = findPartnerById(socket.partnerId);
+      const p = partnerById(socket.partnerId);
 
-      if (partner && partner.connected) {
-        partner.leave(partner.room);
-        partner.room = null;
-        partner.partnerId = null;
-        partner.emit("strangerLeft");
-
-        joinQueue(partner);
+      if (p && p.connected) {
+        p.leave(p.room);
+        p.emit("strangerLeft");
+        resetSocket(p);
+        joinQueue(p);
       }
     }
-
-    console.log("Disconnected:", socket.id);
   });
 
 });
@@ -382,5 +529,5 @@ setInterval(() => {
 ===================================================== */
 
 server.listen(PORT, () => {
-  console.log("VibeSynk server running 🚀 on port " + PORT);
+  console.log("VibeSynk running 🚀 " + PORT);
 });
