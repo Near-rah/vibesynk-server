@@ -1,5 +1,5 @@
 // server.js
-// VibeSynk v24 - Ask M or F first, then Name only if F, Immediate Skip on M
+// VibeSynk v25 - Jumbled Starting Questions + Silent Skip on Male
 
 const express = require("express");
 const http = require("http");
@@ -40,12 +40,11 @@ function resetSocket(socket) {
   socket.isBot = false;
   socket.botLang = "english";
   socket.botMemory = {
-    stage: 0,                    // 0=hi, 1=from, 2=place, 3=gender, 4=name (only if F)
+    stage: 0,                    // 0=greeting, 1=place reaction, 2=gender
     isPretendingFemale: false,
     femaleMsgCount: 0,
     maxFemaleMsgs: Math.floor(Math.random() * 4) + 3,
     userName: null,
-    userPlace: null,
     lastReplies: []
   };
   clearTimeout(socket.botTimer);
@@ -55,7 +54,7 @@ function sendTyping(socket, cb) {
   socket.emit("typing");
   setTimeout(() => {
     if (socket.connected && socket.isBot) cb();
-  }, 800 + Math.floor(Math.random() * 1300));
+  }, 800 + Math.floor(Math.random() * 1400));
 }
 
 function sendBot(socket, msg) {
@@ -110,21 +109,38 @@ function extractName(text) {
 }
 
 /* =====================================================
-   BOT START
+   BOT START - Jumbled Questions
 ===================================================== */
+const startQuestions = [
+  "From where?",
+  "Where are you from?",
+  "Ekkada nundi machha?",
+  "Nuvvu ekkada ra?",
+  "From?",
+  "Which place bro?"
+];
+
 function startBot(socket) {
   if (!socket.connected) return;
   socket.isBot = true;
   socket.emit("connected");
 
   sendTyping(socket, () => {
-    sendBot(socket, rand(["Hi", "Hey", "Hello machha"]));
-    socket.botMemory.stage = 1;
+    const greeting = rand(["Hi", "Hey", "Hello machha"]);
+    sendBot(socket, greeting);
+    
+    // Ask jumbled from question after greeting
+    setTimeout(() => {
+      if (socket.connected) {
+        sendBot(socket, rand(startQuestions));
+        socket.botMemory.stage = 1;
+      }
+    }, 1200);
   });
 }
 
 /* =====================================================
-   BOT REPLY - M or F FIRST, Name only if F
+   BOT REPLY
 ===================================================== */
 function botReply(socket, message) {
   const text = message.toLowerCase().trim();
@@ -134,15 +150,9 @@ function botReply(socket, message) {
   const placeInfo = detectPlace(message);
   const name = extractName(message);
 
-  // Stage 1: From where?
+  // Stage 1: Place reaction
   if (socket.botMemory.stage === 1) {
     socket.botMemory.stage = 2;
-    return lang === "telugu" ? rand(["Ekkada machha?", "Nuvvu ekkada ra?"]) : "From where?";
-  }
-
-  // Stage 2: Place reaction
-  if (socket.botMemory.stage === 2) {
-    socket.botMemory.stage = 3;
     socket.botMemory.userPlace = placeInfo;
 
     if (placeInfo) {
@@ -152,78 +162,70 @@ function botReply(socket, message) {
       if (placeInfo.name === "Vizag") return "Vizag aa bro?";
       return "AP ah ra? Nice";
     }
-    return rand(["Haa", "Achha"]);
+    return rand(["Haa", "Achha", "Oh ok"]);
   }
 
-  // Stage 3: Ask M or F?  (This is what you wanted first)
-  if (socket.botMemory.stage === 3) {
-    socket.botMemory.stage = 4;
+  // Stage 2: Ask M or F?
+  if (socket.botMemory.stage === 2) {
+    socket.botMemory.stage = 3;
     return "M or F?";
   }
 
-  // Stage 4: Gender Check
-  if (socket.botMemory.stage === 4) {
+  // Stage 3: Gender Check
+  if (socket.botMemory.stage === 3) {
 
-    // === MALE → Immediate Skip ===
+    // MALE → Silent Fast Skip (No "Bye ra")
     if (isMale(text)) {
-      sendBot(socket, rand(["Haa machha", "Ok ra", "Scene ledu"]));
+      // Very minimal reply before skip
+      sendBot(socket, rand(["Haa", "Ok ra"]));
 
       setTimeout(() => {
         if (socket.connected) {
-          sendBot(socket, "Bye ra");
-          setTimeout(() => disconnectBot(socket), 800);
+          disconnectBot(socket);   // Direct skip, no extra message
         }
-      }, 1000);
+      }, 900);
 
       return "";
     }
 
-    // === FEMALE → Ask Name + Pretend ===
+    // FEMALE → Continue as girl
     if (isFemale(text)) {
       if (Math.random() < 0.35) {
         socket.botMemory.isPretendingFemale = true;
         socket.botMemory.femaleMsgCount = 0;
-        socket.botMemory.stage = 5;
+        socket.botMemory.stage = 4;
         return rand(["Hii 😊", "Heyy"]);
       } else {
-        sendBot(socket, "Ok bye ra");
+        sendBot(socket, "Ok bye");
         setTimeout(() => disconnectBot(socket), 700);
         return "";
       }
     }
 
-    // If unclear
+    // If unclear gender
     return "M or F?";
   }
 
-  // Stage 5: Female mode - Ask Name here
-  if (socket.botMemory.stage === 5 && socket.botMemory.isPretendingFemale) {
-    if (name) {
-      socket.botMemory.userName = name;
-      socket.botMemory.stage = 6;
-      return `Oh nice ${name}`;
-    }
-    // If no name yet, ask for it
-    return "Ne peru enti?";
-  }
-
-  // Female chatting (short)
+  // Stage 4: Female chatting (ask name naturally)
   if (socket.botMemory.isPretendingFemale) {
     socket.botMemory.femaleMsgCount++;
+
+    if (name && !socket.botMemory.userName) {
+      socket.botMemory.userName = name;
+      return `Oh nice ${name}`;
+    }
+
     if (socket.botMemory.femaleMsgCount >= socket.botMemory.maxFemaleMsgs) {
       sendBot(socket, "Bye");
       setTimeout(() => disconnectBot(socket), 900);
       return "";
     }
-    return noRepeat(socket, ["Hii", "Em undi", "Bagunnava?", "Inkenti"]);
+
+    return noRepeat(socket, ["Hii", "Em undi", "Bagunnava?", "Inkenti ra"]);
   }
 
-  // Normal fallback (should rarely reach here)
-  if (lang === "telugu") {
-    return noRepeat(socket, ["Haa ra", "Em undi machha", "Inka em ledu"]);
-  }
-
-  return "Haha";
+  // Fallback
+  return noRepeat(socket, ["Haa ra", "Em undi machha"]);
 }
 
 function disconnectBot(socket) {
@@ -235,7 +237,7 @@ function disconnectBot(socket) {
 }
 
 /* =====================================================
-   QUEUE & SOCKET
+   QUEUE & SOCKET EVENTS
 ===================================================== */
 function joinQueue(socket) {
   removeQueue(socket);
@@ -324,5 +326,5 @@ setInterval(() => {
 }, 2000);
 
 server.listen(PORT, () => {
-  console.log(`VibeSynk v24 - M or F first + Skip on M running on port ${PORT}`);
+  console.log(`VibeSynk v25 - Jumbled Start + Silent Skip on M running on port ${PORT}`);
 });
