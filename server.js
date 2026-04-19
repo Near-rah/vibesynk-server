@@ -1,5 +1,5 @@
 // server.js
-// VibeSynk v22 - Fixed Male Skip Logic (Clean & Fast Skip)
+// VibeSynk v23 - Fixed Place Detection + Natural Responses
 
 const express = require("express");
 const http = require("http");
@@ -40,11 +40,12 @@ function resetSocket(socket) {
   socket.isBot = false;
   socket.botLang = "english";
   socket.botMemory = {
-    stage: 0,                    // 0=hi, 1=from, 2=place, 3=name, 4=gender, 5=chatting
+    stage: 0,
     isPretendingFemale: false,
     femaleMsgCount: 0,
     maxFemaleMsgs: Math.floor(Math.random() * 4) + 3,
     userName: null,
+    userPlace: null,
     lastReplies: []
   };
   clearTimeout(socket.botTimer);
@@ -54,7 +55,7 @@ function sendTyping(socket, cb) {
   socket.emit("typing");
   setTimeout(() => {
     if (socket.connected && socket.isBot) cb();
-  }, 750 + Math.floor(Math.random() * 1200));
+  }, 800 + Math.floor(Math.random() * 1300));
 }
 
 function sendBot(socket, msg) {
@@ -70,7 +71,7 @@ function noRepeat(socket, list) {
 }
 
 /* =====================================================
-   DETECTION
+   BETTER DETECTION
 ===================================================== */
 function detectLang(text = "") {
   const t = text.toLowerCase();
@@ -81,9 +82,12 @@ function detectLang(text = "") {
 }
 
 function detectPlace(text = "") {
-  const t = text.toLowerCase();
-  if (/hyd|hyderabad|secunderabad|warangal/.test(t)) return { state: "TS", name: "Hyd" };
-  if (/guntur|vizag|visakhapatnam|vijayawada|nellore|kurnool|tirupati/.test(t)) return { state: "AP", name: "AP" };
+  const t = text.toLowerCase().trim();
+  if (/hyd|hyderabad|secunderabad|warangal/.test(t)) return {state: "TS", name: "Hyd"};
+  if (/guntur/.test(t)) return {state: "AP", name: "Guntur"};
+  if (/vijayawada|vi jayawada/.test(t)) return {state: "AP", name: "Vijayawada"};
+  if (/vizag|visakhapatnam/.test(t)) return {state: "AP", name: "Vizag"};
+  if (/nellore|kurnool|tirupati/.test(t)) return {state: "AP", name: "AP side"};
   return null;
 }
 
@@ -120,7 +124,7 @@ function startBot(socket) {
 }
 
 /* =====================================================
-   BOT REPLY - Fixed Skip Logic
+   BOT REPLY - Clean & Natural
 ===================================================== */
 function botReply(socket, message) {
   const text = message.toLowerCase().trim();
@@ -136,12 +140,23 @@ function botReply(socket, message) {
     return lang === "telugu" ? rand(["Ekkada machha?", "Nuvvu ekkada ra?"]) : "From where?";
   }
 
-  // Stage 2: Place reaction
+  // Stage 2: Place reaction - FIXED
   if (socket.botMemory.stage === 2) {
     socket.botMemory.stage = 3;
+    socket.botMemory.userPlace = placeInfo;
+
     if (placeInfo) {
-      if (placeInfo.state === "TS") return rand(["Oh Hyd ah machha", "Hyderabad aa? Same ra"]);
-      if (placeInfo.state === "AP") return rand(["Oh AP ah ra", "Guntur side aa?"]);
+      if (placeInfo.state === "TS") {
+        return rand(["Oh Hyd ah machha", "Hyderabad aa? Same ra"]);
+      } else if (placeInfo.name === "Guntur") {
+        return "Guntur aa? Nice ra";
+      } else if (placeInfo.name === "Vijayawada") {
+        return "Vijayawada aa? Kiraak machha";
+      } else if (placeInfo.name === "Vizag") {
+        return "Vizag aa bro? Beach side ah?";
+      } else {
+        return "AP ah ra? Nice";
+      }
     }
     return rand(["Haa", "Achha"]);
   }
@@ -152,14 +167,14 @@ function botReply(socket, message) {
     return rand(["Ne peru enti machha?", "Nuvvu evaru bro?", "Name cheppu ra"]);
   }
 
-  // Stage 4: Name received → Ask M or F?
+  // Stage 4: Ask M or F?
   if (socket.botMemory.stage === 4) {
     if (name) socket.botMemory.userName = name;
     socket.botMemory.stage = 5;
     return "M or F?";
   }
 
-  // Stage 5: Gender Check + Skip for Male
+  // Stage 5: Gender + Male Skip
   if (socket.botMemory.stage === 5) {
     if (isFemale(text)) {
       if (Math.random() < 0.30) {
@@ -174,33 +189,24 @@ function botReply(socket, message) {
       }
     }
 
-    // === MALE DETECTED → QUICK REPLY + SKIP ===
+    // Male detected → One casual reply then Bye + Skip
     if (isMale(text)) {
-      const casualReply = rand([
-        "Haa machha",
-        "Scene ledu ra",
-        "Girls evaru leru bro",
-        "Boring undi ra"
-      ]);
+      sendBot(socket, rand(["Haa machha", "Scene ledu ra", "Boring undi ra"]));
 
-      sendBot(socket, casualReply);
-
-      // Skip after one casual reply
       setTimeout(() => {
         if (socket.connected) {
           sendBot(socket, "Bye ra");
-          setTimeout(() => disconnectBot(socket), 800);
+          setTimeout(() => disconnectBot(socket), 900);
         }
-      }, 1200);
+      }, 1100);
 
-      return "";   // Don't send anything else in this cycle
+      return "";
     }
 
-    // If user didn't reply clearly
     return "M or F?";
   }
 
-  // Stage 6: Female pretending mode (short)
+  // Female pretending (short)
   if (socket.botMemory.isPretendingFemale) {
     socket.botMemory.femaleMsgCount++;
     if (socket.botMemory.femaleMsgCount >= socket.botMemory.maxFemaleMsgs) {
@@ -211,9 +217,15 @@ function botReply(socket, message) {
     return noRepeat(socket, ["Hii", "Em undi", "Bagunnava?", "Inkenti"]);
   }
 
-  // Normal chatting fallback
+  // Normal chat - Short & Varied
   if (lang === "telugu") {
-    return noRepeat(socket, ["Haa ra", "Em undi machha", "Inka em ledu", "Avuna bava", "Thinnara bro?"]);
+    return noRepeat(socket, [
+      "Haa ra", 
+      "Em undi machha", 
+      "Inka em ledu", 
+      "Avuna bava", 
+      "Thinnara bro?"
+    ]);
   }
 
   return noRepeat(socket, ["Hey", "Same here", "Haha"]);
@@ -228,7 +240,7 @@ function disconnectBot(socket) {
 }
 
 /* =====================================================
-   QUEUE & SOCKET EVENTS
+   QUEUE
 ===================================================== */
 function joinQueue(socket) {
   removeQueue(socket);
@@ -317,5 +329,5 @@ setInterval(() => {
 }, 2000);
 
 server.listen(PORT, () => {
-  console.log(`VibeSynk v22 - Fixed Male Skip running on port ${PORT}`);
+  console.log(`VibeSynk v23 - Fixed Place + Natural running on port ${PORT}`);
 });
