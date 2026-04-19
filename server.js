@@ -1,5 +1,6 @@
 // server.js
-// VibeSynk FINAL Smart Human + Hidden Bot v17 - Heavy Telugu Slang
+// VibeSynk v19 - Super Human-like Telugu Bot (Clean & Natural)
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -11,7 +12,7 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3000;
-const BOT_WAIT = 3000;
+const BOT_WAIT = 2800;
 
 /* =====================================================
    STORAGE
@@ -39,7 +40,7 @@ function resetSocket(socket) {
   socket.isBot = false;
   socket.botLang = "english";
   socket.botMemory = {
-    stage: 0,
+    stage: 0,                    // 0=greeting, 1=from, 2=name, 3=chatting
     isPretendingFemale: false,
     femaleMsgCount: 0,
     maxFemaleMsgs: Math.floor(Math.random() * 3) + 2,
@@ -52,10 +53,9 @@ function resetSocket(socket) {
 
 function sendTyping(socket, cb) {
   socket.emit("typing");
-  const delay = 700 + Math.floor(Math.random() * 1600);
   setTimeout(() => {
     if (socket.connected && socket.isBot) cb();
-  }, delay);
+  }, 800 + Math.floor(Math.random() * 1300));
 }
 
 function sendBot(socket, msg) {
@@ -67,7 +67,7 @@ function sendBot(socket, msg) {
 
 function noRepeat(socket, list) {
   let filtered = list.filter(x => !socket.botMemory.lastReplies.includes(x));
-  return rand(filtered.length > 0 ? filtered : list);
+  return rand(filtered.length ? filtered : list);
 }
 
 /* =====================================================
@@ -75,27 +75,22 @@ function noRepeat(socket, list) {
 ===================================================== */
 function detectLang(text = "") {
   const t = text.toLowerCase();
-  if (/nenu|nuvvu|ekkada|enti|em|ledu|bro|ra|rey|cheppu|bagunnava|ayyo|thinnara|ela|unnaru|inkenti|machha|macha|bava|hyd|hyderabad|vizag|vijayawada/.test(t)) 
+  if (/nenu|nuvvu|ekkada|enti|em|ledu|ra|rey|machha|macha|bava|bagunnava|thinnara|ayyo|inkenti|hyd|hyderabad|vizag|vijayawada|guntur/.test(t))
     return "telugu";
   if (/bhai|yaar|kya|haan|acha/.test(t)) return "hindi";
   return "english";
 }
 
 function detectPlace(text = "") {
-  const t = text.toLowerCase().trim();
-  if (/hyd|hyderabad|secunderabad|warangal|khammam/.test(t)) return {state: "TS", name: "Hyd"};
-  if (/vizag|visakhapatnam|vijayawada|guntur|nellore|kurnool|tirupati/.test(t)) return {state: "AP", name: "AP"};
+  const t = text.toLowerCase();
+  if (/hyd|hyderabad|secunderabad|warangal/.test(t)) return { state: "TS", name: "Hyd" };
+  if (/guntur|vizag|visakhapatnam|vijayawada|nellore|kurnool|tirupati/.test(t)) return { state: "AP", name: "AP" };
   return null;
 }
 
 function isMale(text) {
   const t = text.toLowerCase();
-  return /m\b|male|bro|anna|bhai|boy|machha|rey|ra|dost|macha/.test(t);
-}
-
-function isFemale(text) {
-  const t = text.toLowerCase();
-  return /f\b|female|girl|ammayi|sis|baby|akka/.test(t);
+  return /m\b|male|bro|machha|rey|ra|bhai|anna/.test(t);
 }
 
 function extractName(text) {
@@ -121,7 +116,7 @@ function startBot(socket) {
 }
 
 /* =====================================================
-   BOT REPLY ENGINE - Heavy Telugu Slang
+   MAIN BOT REPLY - Made Very Human-like
 ===================================================== */
 function botReply(socket, message) {
   const text = message.toLowerCase().trim();
@@ -131,14 +126,15 @@ function botReply(socket, message) {
   const placeInfo = detectPlace(message);
   const name = extractName(message);
 
-  // Stage 1: Ask from where
+  // Stage 1: After Hi → Ask from where
   if (socket.botMemory.stage === 1) {
     socket.botMemory.stage = 2;
-    return lang === "telugu" ? rand(["Ekkada machha?", "Nuvvu ekkada bro?", "From where ra?"]) : 
-           lang === "hindi" ? "Kahan se ho bhai?" : "From where?";
+    return lang === "telugu" 
+      ? rand(["Ekkada machha?", "Nuvvu ekkada ra?"]) 
+      : "From where?";
   }
 
-  // Stage 2: React to place + own place + ask name
+  // Stage 2: React to place naturally + ask name
   if (socket.botMemory.stage === 2) {
     socket.botMemory.stage = 3;
     let reply = "";
@@ -146,28 +142,27 @@ function botReply(socket, message) {
     if (placeInfo) {
       socket.botMemory.userPlace = placeInfo;
       if (placeInfo.state === "TS") {
-        reply = rand(["Oh Hyd ah machha", "Hyderabad aa? Kiraak ra", "Same Hyd bro"]);
+        reply = rand(["Oh Hyd ah machha", "Hyderabad aa? Same ra", "Kiraak bro"]);
       } else if (placeInfo.state === "AP") {
-        reply = rand(["Oh AP ah ra", "AP side aa bava", "Vizag aa machha?"]);
+        reply = rand(["Oh AP ah ra", "Guntur side aa?", "AP machha nice"]);
       }
     } else {
-      reply = rand(["Oh nice ra", "Achha machha", "Haa bava"]);
+      reply = rand(["Haa", "Achha", "Oh ok ra"]);
     }
 
-    // Own place (match user if possible)
-    const ownPlace = placeInfo && placeInfo.state === "TS" ? rand(["Nenu kuda Hyd lo ne unna", "Secunderabad side machha"]) :
-                     placeInfo && placeInfo.state === "AP" ? rand(["Nenu AP lo unna ra", "Guntur side"]) :
-                     rand(["Hyd lo unna bro", "Bangalore lo unna"]);
+    const ownPlace = placeInfo && placeInfo.state === "TS" 
+      ? rand(["Nenu kuda Hyd lo unna", "Secunderabad side"]) 
+      : placeInfo && placeInfo.state === "AP" 
+      ? "Nenu AP lo unna ra" 
+      : "Hyd lo unna bro";
 
     reply += `. ${ownPlace}. `;
-
-    // Ask name with slang
-    reply += rand(["Ne peru enti machha?", "Name cheppu ra", "Nuvvu evaru bro?"]);
+    reply += rand(["Ne peru enti machha?", "Nuvvu evaru bro?", "Name cheppu ra"]);
 
     return reply;
   }
 
-  // Stage 3+: Name / Gender / Chat
+  // Stage 3: Name given
   if (name) {
     socket.botMemory.userName = name;
     socket.botMemory.stage = 4;
@@ -176,18 +171,21 @@ function botReply(socket, message) {
       return noRepeat(socket, [
         `Hi ${name} machha`,
         "Em chestunnav ra",
-        "Girls scene ledu bro ee time",
-        "Ayyo boring undi ra, next search cheddama?"
+        "Scene emundi bro?",
+        "Girls evaru leru aa time",
+        "Boring undi ra",
+        "Light ledu machha"
       ]);
     }
-    return `Oh nice ${name} machha`;
+    return `Oh nice ${name}`;
   }
 
-  if (isFemale(text)) {
-    if (Math.random() < 0.30) {
+  // Gender check (Female)
+  if (/f\b|female|girl|ammayi/.test(text)) {
+    if (Math.random() < 0.25) {
       socket.botMemory.isPretendingFemale = true;
       socket.botMemory.femaleMsgCount = 0;
-      return rand(["Hii 😊", "Heyy machha"]);
+      return rand(["Hii 😊", "Heyy"]);
     } else {
       sendBot(socket, "Ok bye ra");
       setTimeout(() => disconnectBot(socket), 700);
@@ -195,23 +193,7 @@ function botReply(socket, message) {
     }
   }
 
-  if (isMale(text)) {
-    socket.botMemory.stage = 4;
-    return noRepeat(socket, ["Haa machha", "Cheppu ra", "Em undi bro"]);
-  }
-
-  // Pretending Female (short & slangy)
-  if (socket.botMemory.isPretendingFemale) {
-    socket.botMemory.femaleMsgCount++;
-    if (socket.botMemory.femaleMsgCount >= socket.botMemory.maxFemaleMsgs) {
-      sendBot(socket, "Bye machha");
-      setTimeout(() => disconnectBot(socket), 800);
-      return "";
-    }
-    return noRepeat(socket, ["Hii", "Em undi", "Bagunnava?", "Inkenti ra"]);
-  }
-
-  // Normal Casual Chat - Heavy Telugu Slang
+  // Normal casual chatting - Very natural & varied
   if (lang === "telugu") {
     return noRepeat(socket, [
       "Haa ra",
@@ -224,18 +206,19 @@ function botReply(socket, message) {
       "Scene ledu",
       "Light ledu machha",
       "Ayyo",
+      "Cheppu rey",
       "Same here ra",
       "Kiraak undi",
-      "Cheppu rey"
+      "Em chestunnav ra"
     ]);
   }
 
   if (lang === "hindi") {
-    return noRepeat(socket, ["Haan bhai", "Aur batao yaar", "Kya scene hai"]);
+    return noRepeat(socket, ["Haan bhai", "Aur batao yaar", "Kya haal hai"]);
   }
 
-  // English fallback with some slang mix
-  return noRepeat(socket, ["Hey machha", "Same here ra", "You?", "Haha", "Tell me bro"]);
+  // English fallback
+  return noRepeat(socket, ["Hey", "Same here", "You?", "Haha", "Tell me bro"]);
 }
 
 function disconnectBot(socket) {
@@ -247,16 +230,25 @@ function disconnectBot(socket) {
 }
 
 /* =====================================================
-   QUEUE & EVENTS
+   QUEUE & SOCKET EVENTS
 ===================================================== */
 function joinQueue(socket) {
   removeQueue(socket);
+
   if (waiting.length > 0) {
     const partner = waiting.shift();
     if (partner && partner.connected) {
       clearTimeout(partner.botTimer);
       clearTimeout(socket.botTimer);
-      pairHumans(socket, partner);
+      const room = socket.id + "#" + partner.id;
+      socket.join(room);
+      partner.join(room);
+      socket.room = room;
+      partner.room = room;
+      socket.partnerId = partner.id;
+      partner.partnerId = socket.id;
+      socket.emit("connected");
+      partner.emit("connected");
       return;
     }
   }
@@ -267,35 +259,38 @@ function joinQueue(socket) {
   socket.botTimer = setTimeout(() => {
     removeQueue(socket);
     if (socket.connected) {
-      if (waiting.length === 0) startBot(socket);
-      else joinQueue(socket);
+      if (waiting.length === 0) {
+        startBot(socket);
+      } else {
+        joinQueue(socket);
+      }
     }
   }, BOT_WAIT);
 }
 
-function pairHumans(a, b) {
-  const room = a.id + "#" + b.id;
-  a.join(room); b.join(room);
-  a.room = room; b.room = room;
-  a.partnerId = b.id; b.partnerId = a.id;
-  a.emit("connected"); b.emit("connected");
-}
-
 io.on("connection", (socket) => {
   resetSocket(socket);
+
   socket.on("join", () => joinQueue(socket));
 
   socket.on("message", (msg) => {
     if (socket.isBot) {
       const reply = botReply(socket, msg);
-      if (reply) sendTyping(socket, () => sendBot(socket, reply));
+      if (reply) {
+        sendTyping(socket, () => sendBot(socket, reply));
+      }
       return;
     }
-    if (socket.room) socket.to(socket.room).emit("message", msg);
+
+    if (socket.room) {
+      socket.to(socket.room).emit("message", msg);
+    }
   });
 
   socket.on("typing", () => {
-    if (!socket.isBot && socket.room) socket.to(socket.room).emit("typing");
+    if (!socket.isBot && socket.room) {
+      socket.to(socket.room).emit("typing");
+    }
   });
 
   socket.on("next", () => {
@@ -339,5 +334,5 @@ setInterval(() => {
 }, 2000);
 
 server.listen(PORT, () => {
-  console.log(`VibeSynk v17 - Heavy Telugu Slang running on port ${PORT}`);
+  console.log(`VibeSynk v19 - Super Human-like running on port ${PORT}`);
 });
