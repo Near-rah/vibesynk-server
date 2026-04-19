@@ -1,6 +1,6 @@
 // server.js
-// VibeSynk FINAL Smart Human + Hidden Bot v13
-// Balanced Telugu + Hindi + English + Real Human Style
+// VibeSynk FINAL Smart Human + Hidden Bot v14
+// Clean + No Language Mix + Real Human Style
 
 const express = require("express");
 const http = require("http");
@@ -71,7 +71,7 @@ function sendBot(socket, msg) {
 ===================================================== */
 function detectLang(text = "") {
   const t = text.toLowerCase().trim();
-  const teluguWords = ["nenu","nuvvu","ekkada","enti","em","haa","ledu","bro","ra","cheppu","bagunnava","ayyo","thinnara","ela","unnaru","inkenti"];
+  const teluguWords = ["nenu","nuvvu","ekkada","enti","em","haa","ledu","bro","ra","cheppu","bagunnava","ayyo","thinnara","ela","unnaru","inkenti","work lo unna","avuna"];
   const hindiWords = ["bhai","yaar","kya","haan","acha","ladki","batao"];
   for (let w of teluguWords) if (t.includes(w)) return "telugu";
   for (let w of hindiWords) if (t.includes(w)) return "hindi";
@@ -108,7 +108,7 @@ function pairHumans(a, b) {
 }
 
 /* =====================================================
-   BOT START - Random First Message
+   BOT START
 ===================================================== */
 function startBot(socket) {
   if (!socket.connected || socket.room) return;
@@ -125,7 +125,7 @@ function startBot(socket) {
 }
 
 /* =====================================================
-   BOT REPLY ENGINE - Balanced Languages
+   BOT REPLY ENGINE - FIXED & CLEAN
 ===================================================== */
 function noRepeat(socket, list) {
   let arr = list.filter(x => x !== socket.lastBotReply);
@@ -136,7 +136,7 @@ function noRepeat(socket, list) {
 function botReply(socket, message) {
   const text = message.toLowerCase().trim();
 
-  // 1. First reply
+  // 1. First user message
   if (!socket.botMemory.langConfirmed) {
     socket.botLang = detectLang(text);
     socket.botMemory.langConfirmed = true;
@@ -155,7 +155,7 @@ function botReply(socket, message) {
     return "M or F?";
   }
 
-  // 2. Gender handling
+  // 2. Gender reply
   if (socket.botMemory.genderAsked && !socket.botMemory.isPretendingFemale) {
 
     if (isFemale(text)) {
@@ -207,71 +207,29 @@ function botReply(socket, message) {
       return "";
     }
 
-    // Language specific casual replies
+    // Clean replies based on detected language
     if (socket.botLang === "telugu") {
-      return noRepeat(socket, [
-        "Hii",
-        "Hey",
-        "Em undi",
-        "Bagunnava",
-        "Cheppu",
-        "Inkenti",
-        "Thinnava"
-      ]);
+      return noRepeat(socket, ["Hii", "Hey", "Em undi", "Bagunnava", "Cheppu", "Inkenti", "Thinnava"]);
     } else if (socket.botLang === "hindi") {
-      return noRepeat(socket, [
-        "Hii",
-        "Hey",
-        "Kya haal hai",
-        "Aur batao"
-      ]);
+      return noRepeat(socket, ["Hii", "Hey", "Kya haal hai", "Aur batao"]);
     } else {
-      // English
-      return noRepeat(socket, [
-        "Hi",
-        "Hey",
-        "Whats up",
-        "Tell me",
-        "What you doing"
-      ]);
+      return noRepeat(socket, ["Hi", "Hey", "Whats up", "Tell me", "What you doing"]);
     }
   }
 
-  // 4. Normal bot replies
+  // 4. Normal replies (fallback)
   socket.botLang = detectLang(text);
 
   if (socket.botLang === "telugu") {
-    return noRepeat(socket, [
-      "Haa",
-      "Inkenti",
-      "Mari em chestunnav",
-      "Avuna",
-      "Cheppu",
-      "Hm",
-      "Ok",
-      "Thinnara",
-      "Work lo unna"
-    ]);
+    return noRepeat(socket, ["Haa", "Inkenti", "Mari em chestunnav", "Avuna", "Cheppu", "Hm", "Ok", "Thinnara", "Work lo unna"]);
   }
 
   if (socket.botLang === "hindi") {
-    return noRepeat(socket, [
-      "Haan",
-      "Aur batao",
-      "Kya scene hai",
-      "Kahan se ho"
-    ]);
+    return noRepeat(socket, ["Haan", "Aur batao", "Kya scene hai", "Kahan se ho"]);
   }
 
-  // English normal
-  return noRepeat(socket, [
-    "Hi",
-    "Hey",
-    "Whats up",
-    "Tell me",
-    "You?",
-    "Same here"
-  ]);
+  // English
+  return noRepeat(socket, ["Hi", "Hey", "Whats up", "Tell me", "You?", "Same here"]);
 }
 
 /* =====================================================
