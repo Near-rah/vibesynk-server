@@ -1,7 +1,6 @@
 // server.js
-// VibeSynk FINAL Smart Human + Hidden Bot v6
-// Ultra Realistic Telugu + Hindi + English Stranger Chat
-// Trained with your real WhatsApp chats for natural human-like conversation
+// VibeSynk FINAL Smart Human + Hidden Bot v7
+// Ultra Realistic + Fake Female Bot Simulation for High Engagement
 
 const express = require("express");
 const http = require("http");
@@ -10,10 +9,7 @@ const { Server } = require("socket.io");
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
 const PORT = process.env.PORT || 3000;
@@ -44,13 +40,17 @@ function resetSocket(socket) {
   socket.partnerId = null;
   socket.isBot = false;
   socket.botLang = "english";
-  socket.botMemory = { 
-    city: null, 
-    job: null, 
-    study: null, 
+  socket.botMemory = {
+    city: null,
+    job: null,
+    study: null,
     mood: null,
     lastTopic: null,
-    langConfirmed: false 
+    langConfirmed: false,
+    genderAsked: false,
+    isPretendingFemale: false,
+    femaleMsgCount: 0,
+    maxFemaleMsgs: Math.floor(Math.random() * 6) + 5   // 5 to 10 messages as girl
   };
   socket.lastBotReply = "";
   clearTimeout(socket.botTimer);
@@ -58,7 +58,7 @@ function resetSocket(socket) {
 
 function sendTyping(socket, cb) {
   socket.emit("typing");
-  const delay = 800 + Math.floor(Math.random() * 2200);
+  const delay = 900 + Math.floor(Math.random() * 2100);
   setTimeout(() => {
     if (!socket.connected || !socket.isBot) return;
     cb();
@@ -71,16 +71,26 @@ function sendBot(socket, msg) {
 }
 
 /* =====================================================
-   LANGUAGE DETECT
+   LANGUAGE + GENDER DETECT
 ===================================================== */
 function detectLang(text = "") {
   const t = text.toLowerCase().trim();
-  const teluguWords = ["nenu","nuvvu","ekkada","enti","em","haa","ledu","bro","ra","cheppu","bagunnava","ayyo","annaa","babu","scene","light","pakka","chill","thinnara","ela","unnaru","inkenti","hm","ok","work","job","busy","thin","tinnara","guntur","vijayawada","hyd","vizag","chirala"];
-  const hindiWords = ["bhai","yaar","kya","haan","acha","kaise","kahan","ladki","bhaiya","matlab","sahi","mast","scene"];
+  const teluguWords = ["nenu","nuvvu","ekkada","enti","em","haa","ledu","bro","ra","cheppu","bagunnava","ayyo","thinnara","ela","unnaru","inkenti"];
+  const hindiWords = ["bhai","yaar","kya","haan","acha","ladki"];
 
   for (let w of teluguWords) if (t.includes(w)) return "telugu";
   for (let w of hindiWords) if (t.includes(w)) return "hindi";
   return "english";
+}
+
+function isMaleReply(text) {
+  const t = text.toLowerCase().trim();
+  return /m\b|male|bro|anna|bhai|boy/.test(t) && !/f\b|female|girl|ammayi|sis/.test(t);
+}
+
+function isFemaleReply(text) {
+  const t = text.toLowerCase().trim();
+  return /f\b|female|girl|ammayi|sis|baby/.test(t);
 }
 
 /* =====================================================
@@ -88,14 +98,10 @@ function detectLang(text = "") {
 ===================================================== */
 function pairHumans(a, b) {
   const room = a.id + "#" + b.id;
-  a.join(room);
-  b.join(room);
-  a.room = room; 
-  b.room = room;
-  a.partnerId = b.id; 
-  b.partnerId = a.id;
-  a.emit("connected");
-  b.emit("connected");
+  a.join(room); b.join(room);
+  a.room = room; b.room = room;
+  a.partnerId = b.id; b.partnerId = a.id;
+  a.emit("connected"); b.emit("connected");
 }
 
 /* =====================================================
@@ -109,11 +115,12 @@ function startBot(socket) {
   sendTyping(socket, () => {
     sendBot(socket, "Hey 👋\nTelugu aa? Hindi aa? English aa?\nCheppu bro 😄");
     socket.botMemory.langConfirmed = false;
+    socket.botMemory.genderAsked = false;
   });
 }
 
 /* =====================================================
-   BOT REPLY ENGINE - Ultra Human v6
+   BOT REPLY ENGINE - v7 (Exact Human + Fake Female Simulation)
 ===================================================== */
 function noRepeat(socket, list) {
   let arr = list.filter(x => x !== socket.lastBotReply);
@@ -124,156 +131,140 @@ function noRepeat(socket, list) {
 function botReply(socket, message) {
   const text = message.toLowerCase().trim();
 
-  // First message - Language selection
+  // 1. Language confirmation
   if (!socket.botMemory.langConfirmed) {
     socket.botLang = detectLang(text);
     socket.botMemory.langConfirmed = true;
+    socket.botMemory.genderAsked = true;
 
     if (socket.botLang === "telugu") {
-      return "Haa Telugu mode on 🔥 inkenti cheppu ra";
+      return "Haa Telugu mode on 🔥\nM or F? Cheppu ra 😊";
     } else if (socket.botLang === "hindi") {
-      return "Haan Hindi mode on 🔥 aur batao bhai";
+      return "Haan Hindi mode on 🔥\nM or F? Batao";
     } else {
-      return "Ok English mode on 🔥 tell me bro, what's up?";
+      return "Ok English mode on 🔥\nM or F? Tell me 😊";
     }
   }
 
-  // Manual language switch by user
-  if (text.includes("english mode") || text.includes("english lo")) {
-    socket.botLang = "english";
-    return "English mode activated 🔥 now speak in English bro";
-  }
-  if (text.includes("telugu mode") || text.includes("telugu lo")) {
-    socket.botLang = "telugu";
-    return "Telugu mode on 🔥 inkenti cheppu ra";
-  }
-  if (text.includes("hindi mode") || text.includes("hindi lo")) {
-    socket.botLang = "hindi";
-    return "Hindi mode on 🔥 bol bhai";
+  // 2. Gender handling (M or F)
+  if (socket.botMemory.genderAsked && !socket.botMemory.isPretendingFemale) {
+
+    if (isFemaleReply(text)) {
+      socket.botMemory.isPretendingFemale = true;
+      socket.botMemory.femaleMsgCount = 0;
+      socket.botMemory.maxFemaleMsgs = Math.floor(Math.random() * 6) + 5; // 5-10 msgs
+
+      return noRepeat(socket, [
+        "Hii 😊 nice to meet you",
+        "Heyy 😘 finally a girl here",
+        "Haa 😄 em undi ra?"
+      ]);
+    }
+
+    if (isMaleReply(text)) {
+      // Sometimes pretend to be girl (to keep user engaged), sometimes skip immediately
+      if (Math.random() < 0.35) {   // 35% chance to pretend female
+        socket.botMemory.isPretendingFemale = true;
+        socket.botMemory.femaleMsgCount = 0;
+        socket.botMemory.maxFemaleMsgs = Math.floor(Math.random() * 5) + 4;
+        return "Hii 😊 sorry bro.. nenu girl ni.. em undi?";
+      } else {
+        // Skip like real girl leaving
+        sendBot(socket, "Oh sorry.. bye 😊");
+        setTimeout(() => {
+          if (socket.connected) {
+            socket.emit("strangerLeft");
+            resetSocket(socket);
+            joinQueue(socket);
+          }
+        }, 800);
+        return ""; // no reply needed
+      }
+    }
   }
 
-  // Set current language
+  // 3. If pretending to be female
+  if (socket.botMemory.isPretendingFemale) {
+    socket.botMemory.femaleMsgCount++;
+
+    // After some messages, suddenly skip without notice (keeps user engaged)
+    if (socket.botMemory.femaleMsgCount >= socket.botMemory.maxFemaleMsgs) {
+      sendBot(socket, rand(["Bye.. 😘", "Gotta go.. tc 😊", "Next time chat cheddam.. bye"]));
+      setTimeout(() => {
+        if (socket.connected) {
+          socket.emit("strangerLeft");
+          resetSocket(socket);
+          joinQueue(socket);
+        }
+      }, 1200);
+      return "";
+    }
+
+    // Female style replies (soft, engaging, girly)
+    if (socket.botLang === "telugu") {
+      return noRepeat(socket, [
+        "Hii 😊 em undi?",
+        "Bagunnava? 😘",
+        "Cheppu ra.. em chestunnav?",
+        "Nenu busy ga unna kani nuvvu cute ga unnav 😄",
+        "Thinnava? 🍛",
+        "Haha same feeling 😂",
+        "Inkenti cheppu naa gurinchi",
+        "Work lo unna.. nuvvu?"
+      ]);
+    } else if (socket.botLang === "hindi") {
+      return noRepeat(socket, [
+        "Hii 😊 kya haal hai?",
+        "Mast hai yaar 😘",
+        "Aur batao..",
+        "Cute ho tum 😂"
+      ]);
+    } else {
+      return noRepeat(socket, [
+        "Hii 😊 what's up?",
+        "You seem sweet 🥰",
+        "Tell me more..",
+        "Haha same here 😄",
+        "What you doing rn?"
+      ]);
+    }
+  }
+
+  // Normal bot replies (when not pretending female)
   socket.botLang = detectLang(text);
 
-  // Memory for better replies
-  const cities = ["guntur","vizag","hyderabad","hyd","vijayawada","warangal","delhi","mumbai","chennai","bangalore","chirala"];
-  for (let c of cities) {
-    if (text.includes(c)) socket.botMemory.city = c;
-  }
-  if (text.includes("job") || text.includes("work") || text.includes("office") || text.includes("busy")) socket.botMemory.job = true;
-  if (text.includes("study") || text.includes("college") || text.includes("exam") || text.includes("btech")) socket.botMemory.study = true;
-
-  /* ==================== TELUGU MODE (Real WhatsApp style) ==================== */
+  // Telugu normal replies
   if (socket.botLang === "telugu") {
-
-    if (["hi","hey","hello","yo"].some(g => text.includes(g))) {
-      return noRepeat(socket, [
-        "Haa bro 😄 em undi ra?",
-        "Hey ra, bagunnava?",
-        "Cheppu inkenti?"
-      ]);
-    }
-
-    if (text.includes("ammayi") || text.includes("girl") || text.includes("ladki")) {
-      return noRepeat(socket, [
-        "Haha classic bro 😂 andaru adhe antaru",
-        "Ammayilu 2 sec lo skip chestharu ra 😭",
-        "Same scene ra"
-      ]);
-    }
-
-    if (text.includes("skip") || text.includes("left") || text.includes("vellipoy")) {
-      return noRepeat(socket, [
-        "2 seconds lo vellipotharu ra 😂",
-        "Fast forward button la undi",
-        "Light teesuko bro"
-      ]);
-    }
-
-    if (text.includes("bored") || text.includes("time pass") || text.includes("bore")) {
-      return noRepeat(socket, [
-        "Same ra timepass ke vachina 😄",
-        "Bore kodtundi kada, em scene cheppu",
-        "Chill bro"
-      ]);
-    }
-
-    if (socket.botMemory.city) {
-      const c = socket.botMemory.city;
-      delete socket.botMemory.city;
-      return noRepeat(socket, [
-        `${c} aa? Super ra 😄 exact ga ekkada?`,
-        `Ohh ${c} nundi aa, baguntadi bro`
-      ]);
-    }
-
-    if (text.includes("thin") || text.includes("food") || text.includes("tinnara")) {
-      return noRepeat(socket, [
-        "Haa thinnam ra, nuvvu?",
-        "Tintunna, nuvvu em thinav?",
-        "Late undi le"
-      ]);
-    }
-
-    if (text.includes("work") || text.includes("job") || text.includes("office") || text.includes("busy")) {
-      return noRepeat(socket, [
-        "Work lo unna bro? 😂",
-        "Stress ekkuva aa?",
-        "Ekkada work chestunnav ra?"
-      ]);
-    }
-
-    // Default natural replies (very close to your real chats)
     return noRepeat(socket, [
-      "Haa bro 😄",
-      "Inkenti ra?",
-      "Mari nuvvu em chestunnav?",
+      "Haa bro 😄 inkenti ra?",
+      "Mari em chestunnav?",
       "Avuna? Nice",
       "😂 Adhe scene",
       "Cheppu full ga",
-      "Silent enduku ra?",
       "Pakka bro",
       "Hm",
-      "Ok ra",
       "Thinnara?",
-      "Ela unnaru?",
-      "Work lo unna?",
-      "Same bro",
-      "Good night ra 😴",
-      "Busy na?"
+      "Work lo unna?"
     ]);
   }
 
-  /* ==================== HINDI MODE ==================== */
+  // Hindi normal
   if (socket.botLang === "hindi") {
-    return noRepeat(socket, [
-      "Haan yaar 😄",
-      "Aur batao bhai",
-      "Kya scene hai?",
-      "Kahan se ho?",
-      "Mast hai bro 🔥",
-      "Chill karo yaar"
-    ]);
+    return noRepeat(socket, ["Haan yaar 😄", "Aur batao bhai", "Kya scene hai?"]);
   }
 
-  /* ==================== ENGLISH MODE (Natural human style) ==================== */
+  // English normal
   return noRepeat(socket, [
     "Nice bro 😄",
     "What's up?",
     "Tell me more",
     "Haha same here",
-    "You?",
-    "How's your day?",
-    "Cool",
-    "Lol",
-    "Where you from?",
-    "What you doing rn?",
-    "Same bro"
+    "You?"
   ]);
 }
 
 /* =====================================================
-   JOIN QUEUE + SOCKET LOGIC (100% unchanged)
+   JOIN QUEUE + SOCKET (unchanged)
 ===================================================== */
 function joinQueue(socket) {
   removeQueue(socket);
@@ -311,7 +302,9 @@ io.on("connection", (socket) => {
   socket.on("message", (msg) => {
     if (socket.isBot) {
       const reply = botReply(socket, msg);
-      sendTyping(socket, () => sendBot(socket, reply));
+      if (reply) {
+        sendTyping(socket, () => sendBot(socket, reply));
+      }
       return;
     }
     if (socket.room) {
@@ -360,16 +353,10 @@ io.on("connection", (socket) => {
   });
 });
 
-/* =====================================================
-   ONLINE COUNT
-===================================================== */
 setInterval(() => {
   io.emit("onlineCount", io.engine.clientsCount);
 }, 2000);
 
-/* =====================================================
-   START SERVER
-===================================================== */
 server.listen(PORT, () => {
   console.log(`VibeSynk running 🚀 on port ${PORT}`);
 });
